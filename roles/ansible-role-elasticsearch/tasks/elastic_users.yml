@@ -1,0 +1,39 @@
+---
+
+- name: Load roles definition
+  include_vars:
+    file: "{{ roles_definition_file }}"
+
+- name: Create roles
+  uri: 
+    method: POST
+    url_username: elastic
+    url_password: "{{ secrets.elasticsearch.users.elastic }}"
+    url: "{% if elasticsearch_security_http_enabled %}https{% else %}http{% endif %}://{{ elasticsearch_network_address }}:{{ elasticsearch_network_port }}/_security/role/{{ item.key }}"
+    remote_src: True
+    return_content: True
+    validate_certs: False
+    body_format: json
+    body: "{{ item.value | to_nice_json }}"
+  run_once: True
+  with_dict: "{{ roles }}"
+  register: roles_creation
+
+- name: Load users definition
+  include_vars:
+    file: "{{ users_definition_file }}"
+
+- name: Create users
+  uri: 
+    method: POST
+    url_username: elastic
+    url_password: "{{ secrets.elasticsearch.users.elastic }}"
+    url: "{% if elasticsearch_security_http_enabled %}https{% else %}http{% endif %}://{{ elasticsearch_network_address }}:{{ elasticsearch_network_port }}/_security/user/{{ item.key }}"
+    remote_src: True
+    return_content: True
+    validate_certs: False
+    body_format: json
+    body: "{{ item.value | to_nice_json }}"
+  run_once: True
+  with_dict: "{{ users }}"
+  register: users_creation

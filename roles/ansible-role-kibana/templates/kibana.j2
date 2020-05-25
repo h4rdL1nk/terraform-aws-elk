@@ -1,0 +1,20 @@
+
+server:
+  host: "0"
+
+#xpack.monitoring.ui.container.elasticsearch.enabled: true
+#xpack.monitoring.ui.enabled: false
+elasticsearch.hosts: [ {% for node in elasticsearch_cluster_network_addresses %}"{% if elasticsearch_security_http_enabled %}https{% else %}http{% endif %}://{{ node }}:{{ elasticsearch_network_port }}"{% if loop.index != elasticsearch_cluster_network_addresses|length %},{% endif %}{% endfor %} ]
+elasticsearch.ssl.verificationMode: {{ kibana_elasticsearch_ssl_verification_mode }}
+elasticsearch.ssl.certificateAuthorities: /certs/{{ elasticsearch_certificate_ca_file_ingest }}
+#xpack.reporting.kibanaServer.protocol: http
+#xpack.reporting.kibanaServer.port: 5601
+#xpack.reporting.kibanaServer.hostname: localhost
+
+{% if kibana_metricbeat_monitoring_enabled %}
+xpack.monitoring.kibana.collection.enabled: false
+{% endif %}
+
+{% if kibana_security_audit_enabled %}
+xpack.security.audit.enabled: true
+{% endif %}

@@ -1,0 +1,38 @@
+---
+
+- name: ELK elasticsearch setup
+  gather_facts: True
+  hosts: elasticsearch
+  become: True
+
+  pre_tasks:
+    - set_fact:
+        test_addr: "{% set addresses = [] %}{% for host in groups[elasticsearch_group] %}{{ addresses.append(hostvars[ host ]['private_ip_address']) }}{% endfor %}{{ addresses | unique }}"
+
+  roles:
+
+    - role: ansible-role-elasticsearch
+      elasticsearch_cluster_name: clustermicro
+      elasticsearch_network_address: "{{ hostvars[ inventory_hostname ]['private_ip_address'] }}"
+      elasticsearch_cluster_network_addresses: "{% set addresses = [] %}{% for host in groups[elasticsearch_group] %}{{ addresses.append(hostvars[ host ]['private_ip_address']) }}{% endfor %}{{ addresses | unique }}"
+      elasticsearch_docker_image: docker.elastic.co/elasticsearch/elasticsearch
+      elasticsearch_docker_tag: "{{ elk_stack_version|default('7.4.0') }}"
+      elasticsearch_docker_container_memory: 4096
+      elasticsearch_docker_container_cpu_count: 1
+      elasticsearch_docker_security_auth_ldap_hosts:
+        - "ldap://replicahi.hi.inet:389"
+      elasticsearch_docker_security_auth_ldap_base_dn: "o=TID"
+      elasticsearch_license_enabled: True
+      elasticsearch_lvm_storage_enable: False
+      elasticsearch_lvm_storage_pv_devices: [ "/dev/vdd" ]
+      elasticsearch_lvm_storage_lv_size: 15G
+      elasticsearch_users_internal_pass_change: True
+      elasticsearch_users_create: True
+      elasticsearch_users_file: "{{ lookup('env', 'PWD') }}/files/elasticsearch/users/definition.yml"
+      elasticsearch_roles_file: "{{ lookup('env', 'PWD') }}/files/elasticsearch/roles/definition.yml"
+      elasticsearch_certificate_local_dir: "{{ lookup('env', 'PWD') }}/files/elasticsearch/certificates/"
+      elasticsearch_notification_mail_server: mailhost.hi.inet
+      elasticsearch_monitoring_enable: False
+      elasticsearch_monitoring_hosts: []
+      elasticsearch_force_keystore_create: False
+      elasticsearch_metricbeat_monitoring_enabled: True

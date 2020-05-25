@@ -1,0 +1,307 @@
+input {
+  beats {
+    port => {{ logstash_network_port }}
+    ssl => true
+    ssl_certificate => "/usr/share/logstash/config/{{ logstash_certificate_auth_cert }}"
+    ssl_key => "/usr/share/logstash/config/{{ logstash_certificate_auth_key }}"
+    ssl_verify_mode => "none"
+  }
+}
+
+filter {
+
+    ### LABEL MUTATIONS
+    mutate { add_field => { "[@metadata][s_owner]" => "%{[container][labels][SERVICE_OWNER]}" } }
+    mutate { lowercase => [ "[@metadata][s_owner]" ] }
+    mutate { add_field => { "[@metadata][s_type]" => "%{[container][labels][SERVICE_TYPE]}" } }
+    mutate { lowercase => [ "[@metadata][s_type]" ] }
+    mutate { add_field => { "[@metadata][s_label]" => "%{[container][labels][SERVICE_LABEL]}" } }
+    mutate { lowercase => [ "[@metadata][s_label]" ] }
+
+    ### PARSED_JSON GENERATION
+    json {
+      skip_on_invalid_json => true
+      source => "message"
+      target => "parsed_json"
+      add_tag => "parsed_json"
+    }
+    
+    ### PARSED_JSON MUTATIONS
+    mutate { add_field => { "[@metadata][pj_type]" => "%{[parsed_json][type]}" } }
+    mutate { lowercase => [ "[@metadata][pj_type]" ] }
+    mutate { add_field => { "[@metadata][pj_service]" => "%{[parsed_json][payload][cdr][service_name][service]}" } }
+    mutate { lowercase => [ "[@metadata][pj_service]" ] }
+    mutate { add_field => { "[@metadata][pj_consumer]" => "%{[parsed_json][payload][cdr][consumer_id]}" } }
+    mutate { lowercase => [ "[@metadata][pj_consumer]" ] }
+    mutate { add_field => { "[@metadata][pj_status_code]" => "%{[parsed_json][payload][cdr][response][status_code]}" } }
+    mutate { convert =>   { "[@metadata][pj_status_code]" => "string" } }
+    mutate { add_field => { "[@metadata][pj_error_code]" => "%{[parsed_json][payload][cdr][response][error][code]}" } }
+    mutate { convert =>   { "[@metadata][pj_error_code]" => "string" } }
+    mutate { add_field => { "[@metadata][pj_error_desc]" => "%{[parsed_json][payload][cdr][response][error][description]}" } }
+    # BINARY FIELD MUTATIONS
+    mutate { add_field => { "[@metadata][pj_json_active]" => "%{[parsed_json][payload][cdr][response][json_response][active]}" } }
+    mutate { convert =>   { "[@metadata][pj_json_active]" => "string" } }
+    mutate { add_field => { "[@metadata][pj_json_result]" => "%{[parsed_json][payload][cdr][response][json_response][result]}" } }
+    mutate { convert =>   { "[@metadata][pj_json_result]" => "string" } }
+    mutate { add_field => { "[@metadata][pj_json_address]" => "%{[parsed_json][payload][cdr][response][json_response][addressMatch]}" } }
+    mutate { convert =>   { "[@metadata][pj_json_address]" => "string" } }
+    mutate { add_field => { "[@metadata][pj_json_birth]" => "%{[parsed_json][payload][cdr][response][json_response][birthdateMatch]}" } }
+    mutate { convert =>   { "[@metadata][pj_json_birth]" => "string" } }
+    mutate { add_field => { "[@metadata][pj_json_name]" => "%{[parsed_json][payload][cdr][response][json_response][nameMatch]}" } }
+    mutate { convert =>   { "[@metadata][pj_json_name]" => "string" } }
+    mutate { add_field => { "[@metadata][pj_json_isLost]" => "%{[parsed_json][payload][cdr][response][json_response][isLostOrStolen]}" } }
+    mutate { convert =>   { "[@metadata][pj_json_isLost]" => "string" } }
+    mutate { add_field => { "[@metadata][pj_json_lost]" => "%{[parsed_json][payload][cdr][response][json_response][lostOrStolen]}" } }
+    mutate { convert =>   { "[@metadata][pj_json_lost]" => "string" } }
+    mutate { add_field => { "[@metadata][pj_json_avail]" => "%{[parsed_json][payload][cdr][response][json_response][available]}" } }
+    mutate { convert =>   { "[@metadata][pj_json_avail]" => "string" } }
+    mutate { add_field => { "[@metadata][pj_json_reuse]" => "%{[parsed_json][payload][cdr][response][json_response][reuse]}" } }
+    mutate { convert =>   { "[@metadata][pj_json_reuse]" => "string" } }
+    mutate { add_field => { "[@metadata][pj_json_location]" => "%{[parsed_json][payload][cdr][response][json_response][Location]}" } }
+    mutate { convert =>   { "[@metadata][pj_json_location]" => "string" } }
+
+    ### INDEX_TAG HIERARCHY
+    # INFRA ENRICHMENT
+    if [@metadata][s_owner] == "infra" {
+      if [@metadata][s_label]=="billing" { mutate { add_field => { "index_tag" => "infra-stats" } } }
+      else if [@metadata][s_type] in ["elastalert","cronjob"] { mutate { add_field => { "index_tag" => "infra-monitoring" } } }
+      else if [@metadata][s_type] in ["issue","wo"] { mutate { add_field => { "index_tag" => "infra-operations" } } }
+      else if ( [@metadata][s_type] in ["confd","docker_gen","telegraf","mongodb","etcd","logstash","filebeat","metricbeat","elasticsearch","gater","kibana"] ) { drop { } }
+      else {mutate { add_field => { "index_tag" => "untagged" } } } }
+
+    # GATER ENRICHMENT
+    else if [@metadata][s_type] == "gater" and [@metadata][s_label] == "inet" {
+      if [@metadata][s_owner] == "o2-uk" { mutate { add_field => { "index_tag" => "api-o2uk-gater" } } }
+      else if [@metadata][s_owner] == "o2-uk-2" { mutate { add_field => { "index_tag" => "api-o2uk2-gater" } } }
+      else if [@metadata][s_owner] == "movistar-es" { mutate { add_field => { "index_tag" => "api-mves-gater" } } }
+      else {mutate { add_field => { "index_tag" => "untagged" } } } }
+
+    # API ENRICHMENT
+    else if [@metadata][s_type] in ["api","webdav"] {
+      if [@metadata][s_owner] == "o2-uk" {
+        if [@metadata][pj_type] == "cdr" { mutate { add_field => { "index_tag" => "api-o2uk-cdr" } }
+           # CDR CONSUMER TRANSLATION O2UK
+           translate {
+              field => "[@metadata][pj_consumer]"
+              destination => "[consumer_name]"
+              dictionary => {
+                "5731c636254e86f78f02e16c" => "CHECKEON"
+                "5851005ea09f90d00892c08b" => "MOBILECONNECT"
+                "593e75022088aa00016973e6" => "ASPECT"
+                "59538386748b28000152a54a" => "DANAL"
+                "59ba65fc2088aa000106be4f" => "PAYFONE"
+                "59bf8a9e748b28000149c1d8" => "STATIQ"
+                "59c4dd5b2088aa0001126925" => "TRULIOO"
+                "59e0874e2088aa000191f8bf" => "JERSEYTELECOM"
+                "5a60b1cce3db040001314864" => "BENCOLE"
+                "5b0806548f5f8b000126bb93" => "IMI"
+                "5b6af9488f5f8b000126bc00" => "TELESIGN"
+                "5b7e5c77cea8730001b28b13" => "NETSIZE"
+                "5bf7d9445aa679000127e8cb" => "SIMWOOD"
+                "5c629ea4046f7400013018fd" => "DEMOBANCOIBIZA"
+                "5c645c7b5aa679000127e96c" => "SEKURA"
+                "5c6eb4eb5aa679000127e986" => "PHRONESIS"
+                "5c825294046f7400012dbab3" => "VALIDSOFT"
+                "5cb48ad75aa67900015a033b" => "CALLSIGN"
+                "5d95b3425ccb080001e7fe76" => "INFOBIP"
+                "5d84d43669717900013cd4d1" => "GIFFGAFF"
+                "5df0ab8b94dbaa0001a30bae" => "XCONNECT"
+                }
+              fallback => "UNTAGGED" } }
+        else if [@metadata][pj_type] == "request" {mutate { add_field => { "index_tag" => "api-o2uk-request" } } }
+        else { mutate { add_field => { "index_tag" => "api-o2uk-garbage" } } } }
+      else if [@metadata][s_owner] == "o2-uk-2" {
+        if [@metadata][pj_type] == "cdr" { mutate { add_field => { "index_tag" => "api-o2uk2-cdr" } }
+            # CDR CONSUMER TRANSLATION O2UK2
+            translate {
+               field => "[@metadata][pj_consumer]"
+               destination => "[consumer_name]"
+               dictionary => {
+                "5dd5602cf47c260001a29260" => "CHECKEON"
+                "5ddb7cdff47c260001a29264" => "IMI"
+				"5ddba6bcf47c260001a2926b" => "INFOBIP"
+                "5de7b3feea629b0001aa18f0" => "O2UKRCS_MAVENIR"
+                }
+               fallback => "UNTAGGED" } }
+        else if [@metadata][pj_type] == "request" { mutate { add_field => { "index_tag" => "api-o2uk2-request" } } }
+        else { mutate { add_field => { "index_tag" => "api-o2uk2-garbage" } } } }
+      else if [@metadata][s_owner] == "movistar-es" {
+        if [@metadata][pj_type] == "cdr" { mutate { add_field => { "index_tag" => "api-mves-cdr" } }
+            # CDR CONSUMER TRANSLATION MVES
+            translate {
+               field => "[@metadata][pj_consumer]"
+               destination => "[consumer_name]"
+               dictionary => {
+                "5a97cbb5d97b5d0001ae96ea" => "CHECKEON"
+                "5c136c2843bf8d0001c00d53" => "MOBILECONNECT"
+                }
+               fallback => "UNTAGGED" } }
+        else if [@metadata][pj_type] == "request" { mutate { add_field => { "index_tag" => "api-mves-request" } } }
+        else { mutate { add_field => { "index_tag" => "api-mves-garbage" } } } }
+      else {mutate { add_field => { "index_tag" => "untagged" } } } }
+
+    # INGESTION ENRICHMENT
+    else if ([@metadata][s_type] in ["ingest", "gater"] and [@metadata][s_label] in ["corp", "back", "manager", "streamer", "ingestor", "keyon", "dormer"]) or [@metadata][s_type] in ["dapter", "speedster", "cronjob"]  {
+        # O2UK ENRICHMENT
+		if [@metadata][s_owner] == "o2-uk" {
+          if [@metadata][s_label] == "abs" {
+            grok { match => { "[parsed_json][payload][msg]" => "/%{WORD:abs_operation}" } }
+            if [abs_operation] == "auth" {
+              mutate {
+                add_field => { "[abs][command]" => "%{abs_operation}" }
+                add_field => { "[abs][type]" => "%{abs_operation}" }
+                remove_field => [ "abs_operation" ]
+                add_tag => [ "abs-parsed" ]
+                add_field => { "index_tag" => "feed-o2uk-realtime-abs-commands" } }	}
+            else if [abs_operation] in [ "pca","pcd","pcm" ] {
+              kv {
+                add_field => { "[abs][command]" => "%{abs_operation}" }
+                include_keys => [ "type","name","spid","onetwork","nnetwork","service_level" ]
+                remove_field => [ "abs_operation" ]
+                source => "[parsed_json][payload][msg]"
+                target => "abs"
+                add_tag => [ "abs-parsed" ]
+              }
+              mutate { add_field => { "index_tag" => "feed-o2uk-realtime-abs-commands" } } }
+            else  {	mutate { add_field => { "index_tag" => "feed-o2uk-realtime-abs-garbage" } }	} }
+          else if [@metadata][s_label] == "reuse" { mutate { add_field => { "index_tag" => "feed-o2uk-batch-reuse" } } }
+          else if [@metadata][s_label] == "nucleus" { mutate { add_field => { "index_tag" => "feed-o2uk-batch-nucleus" } } }
+          else if [@metadata][s_label] == "msisdn-status-etl" { mutate { add_field => { "index_tag" => "feed-o2uk-batch-msisdn-status-etl" } } }
+          else { mutate { add_field => { "index_tag" => "feed-o2uk-ingest" } } } }
+		# O2UK2 ENRICHMENT
+		else if [@metadata][s_owner] == "o2-uk-2" {
+          if [@metadata][s_label] == "reuse" { mutate { add_field => { "index_tag" => "feed-o2uk2-batch-reuse" } } }
+          else { mutate { add_field => { "index_tag" => "feed-o2uk2-ingest" } } } }
+		# MVES ENRICHMENT
+		else if [@metadata][s_owner] == "movistar-es" {
+          if [@metadata][s_label] == "tef_sipr" { mutate { add_field => { "index_tag" => "feed-mves-realtime-sipr" } } }
+          else if [@metadata][s_label] == "tef_magt" { mutate { add_field => { "index_tag" => "feed-mves-realtime-magt" } } }
+          else if [@metadata][s_label] == "msisdn-status-etl" { mutate { add_field => { "index_tag" => "feed-mves-batch-msisdn-status-etl" } } }
+          else { mutate { add_field => { "index_tag" => "feed-mves-ingest" } } } }
+		else {mutate { add_field => { "index_tag" => "untagged" } } } }
+    # FINAL "ELSE" FOR INDEX_TAG HIERARCHY -> if document does not match with any previous comparison then mark it as "untagged"
+    else {mutate { add_field => { "index_tag" => "untagged" } } }
+
+    ### CDR GLOBAL ENRICHMENT
+    if [@metadata][pj_type] == "cdr" and [@metadata][pj_service] {
+        # BILLING REPORTS INFO FOR ROLLUP JOBS
+        if [@metadata][pj_status_code] { mutate { add_field => { "status_code" => "%{[@metadata][pj_status_code]}" } } }
+        if [@metadata][pj_error_code] == "%{[parsed_json][payload][cdr][response][error][code]}" { mutate { add_field => { "[error_code]" => "-" } } }
+        else { mutate { add_field => { "[error_code]" => "%{[@metadata][pj_error_code]}" } } }
+        if [@metadata][pj_error_desc] == "%{[parsed_json][payload][cdr][response][error][description]}" { mutate { add_field => { "error_description" => "-" } } } 
+        else { mutate { add_field => {"error_description" => "%{[@metadata][pj_error_desc]}" } } }
+
+        # BOOLEAN TO STRING FIELDS FOR ROLLUP JOBS
+        if [@metadata][pj_json_active] != "%{[parsed_json][payload][cdr][response][json_response][active]}" { mutate { add_field => { "[json_response][active]" => "%{[@metadata][pj_json_active]}" } } }
+        if [@metadata][pj_json_result] != "%{[parsed_json][payload][cdr][response][json_response][result]}" { mutate { add_field => { "[json_response][result]" => "%{[@metadata][pj_json_result]}" } } }
+        if [@metadata][pj_json_address] != "%{[parsed_json][payload][cdr][response][json_response][addressMatch]}" { mutate { add_field => { "[json_response][addressMatch]" => "%{[@metadata][pj_json_address]}" } } }
+        if [@metadata][pj_json_birth] != "%{[parsed_json][payload][cdr][response][json_response][birthdateMatch]}" { mutate { add_field => { "[json_response][birthdateMatch]" => "%{[@metadata][pj_json_birth]}" } } }
+        if [@metadata][pj_json_name] != "%{[parsed_json][payload][cdr][response][json_response][nameMatch]}" { mutate { add_field => { "[json_response][nameMatch]" => "%{[@metadata][pj_json_name]}" } } }
+        if [@metadata][pj_json_isLost] != "%{[parsed_json][payload][cdr][response][json_response][isLostOrStolen]}" { mutate { add_field => { "[json_response][lostStolen]" => "%{[@metadata][pj_json_isLost]}" } } }
+        if [@metadata][pj_json_lost] != "%{[parsed_json][payload][cdr][response][json_response][lostOrStolen]}" { mutate { add_field => { "[json_response][lostStolen]" => "%{[@metadata][pj_json_lost]}" } } }
+        if [@metadata][pj_json_avail] != "%{[parsed_json][payload][cdr][response][json_response][available]}" { mutate { add_field => { "[json_response][available]" => "%{[@metadata][pj_json_avail]}" } } }
+        if [@metadata][pj_json_reuse] != "%{[parsed_json][payload][cdr][response][json_response][reuse]}" { mutate { add_field => { "[json_response][reuse]" => "%{[@metadata][pj_json_reuse]}" } } }
+        if [@metadata][pj_json_location] != "%{[parsed_json][payload][cdr][response][json_response][Location]}" { mutate { add_field => { "[json_response][Location]" => "%{[@metadata][pj_json_location]}" } } }
+
+        # LUCA SERVICE TAG
+        translate {
+           field => "[@metadata][pj_service]"
+           destination => "[luca_service]"
+           dictionary => {
+                "calldivert" => "LUCA ATP Calldivert"
+                "simswap" => "LUCA ATP Simswap"
+                "snl" => "LUCA SNL"
+                "xmnomatchv2" => "LUCA Match v2"
+                "numberrecycle" => "LUCA Number Recycle"
+                "deviceinfo" => "LUCA Device Info"
+                "subscriber-msisdn" => "LUCA Subscriber MSISDN"
+                "hack-api" => "Hack API"
+                "xmnomatchv1" => "LUCA Match v1"
+                "getmarketsegment" => "LUCA Match v1"
+                "islostorstolen" => "LUCA Match v1"
+                "get-msisdn-status" => "MSISDN Status"
+                "domestic-proximity" => "LUCA Proximity"
+                "msisdn-verify-match" => "LUCA Verify"
+           }
+           fallback => "UNTAGGED" } }
+
+   ### ABS BLACKOUT WINDOW ENRICHMENT
+    if [@metadata][s_label] == "abs" and [parsed_json][type] == "ALARM" {
+     ruby {
+          init => '["date", "tzinfo"].each(&method(:require))'
+          code => 'tz = TZInfo::Timezone.get("Europe/London")
+                   d =  tz.utc_to_local(event.get("@timestamp").time)
+                   check = d.to_datetime.hour * 100 + d.to_datetime.min
+                   if  (check.between?(0,630) or check.between?(2200,2359)) && (d.to_datetime.to_time.saturday? or d.to_datetime.to_time.sunday?)
+                     event.set("blackout", "true")
+                   elsif (check.between?(0,530) or check.between?(2200,2359)) && !(d.to_datetime.to_time.saturday? or d.to_datetime.to_time.sunday?)
+                     event.set("blackout", "true")
+                   end'
+          add_tag => [ "blackoutABSParsed" ]
+        }
+    }
+
+    ### SIPR BLACKOUT WINDOW ENRICHMENT
+    if [@metadata][s_label] == "tef_sipr" and [parsed_json][type] == "ALARM" {
+      ruby {
+          init => '["date", "tzinfo"].each(&method(:require))'
+          code => 'tz = TZInfo::Timezone.get("Europe/Madrid")
+                   d =  tz.utc_to_local(event.get("@timestamp").time)
+                   check = d.to_datetime.hour * 100 + d.to_datetime.min
+                   if  (check.between?(0,1100) or check.between?(2100,2359)) && (d.to_datetime.to_time.saturday? or d.to_datetime.to_time.sunday?)
+                     event.set("blackout", "true")
+                   elsif (check.between?(0,1000) or check.between?(2200,2359)) && !(d.to_datetime.to_time.saturday? or d.to_datetime.to_time.sunday?)
+                     event.set("blackout", "true")
+                   end'
+          add_tag => [ "blackoutSIPRParsed" ]
+        }
+    }
+
+}
+
+### FILTER FOR METRICBEAT EVENTS
+filter {
+
+    if [agent][type] == "metricbeat" { mutate { add_field => { "index_name" => "metricbeat-%{[agent][version]}-%{+YYYY.MM.dd}" } } }
+    else if [agent][type] == "filebeat" { mutate { add_field => { "index_name" => "logstash-%{[index_tag]}-%{+YYYY.MM.dd}" } }	}
+    else { mutate { add_field => { "index_name" => "heartbeat-%{[agent][version]}-%{+YYYY.MM.dd}" } } }
+
+}
+
+### GENERATE UNIQUE DOCUMENT ID
+filter {
+    if [agent][type] == "filebeat" {
+        fingerprint {
+            source => [ "message", "@timestamp" ]
+            target => "[@metadata][fingerprint]"
+            method => "SHA256"
+            key => "12345678"
+            concatenate_sources => true
+        }
+    }
+    else {
+        fingerprint {
+            source => [ "agent", "metricset", "container", "@timestamp" ]
+            target => "[@metadata][fingerprint]"
+            method => "SHA256"
+            key => "12345678"
+            concatenate_sources => true
+        }
+    }
+}
+
+output {
+
+  elasticsearch {
+      hosts => [ {% for node in elasticsearch_cluster_network_addresses %}"{% if elasticsearch_security_http_enabled %}https{% else %}http{% endif %}://{{ node }}:{{ elasticsearch_network_port }}"{% if loop.index != elasticsearch_cluster_network_addresses|length %},{% endif %}{% endfor %} ] 
+      ssl => true
+      ssl_certificate_verification => false
+      manage_template => false
+      cacert => "/usr/share/logstash/config/{{ elasticsearch_certificate_ca_file_ingest|default('ESca.crt') }}"
+      user => "{{ secrets.logstash.es_management_user }}"
+      password => "{{ secrets.logstash.es_management_pass }}"
+      index => "%{[index_name]}"
+      document_id => "%{[@metadata][fingerprint]}"
+  }
+
+}

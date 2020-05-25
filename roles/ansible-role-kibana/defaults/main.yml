@@ -1,0 +1,21 @@
+---
+
+kibana_docker_image: registry.smartdigits.io/infra/kibana
+kibana_docker_tag: 7.2.0
+kibana_docker_container_user_uid: 1000
+kibana_docker_container_group_uid: 1000
+kibana_data_dir: /var/dockershared/kibana/data
+kibana_config_dir: /var/dockershared/kibana/config
+kibana_certificate_dir: /var/dockershared/kibana/certs
+kibana_cluster_name: default 
+kibana_group: kibana
+kibana_network_port: 5601
+kibana_network_name: DOCKER_BACKEND
+kibana_secrets_file: vault/secrets.yml
+
+kibana_force_keystore_write: false
+kibana_metricbeat_monitoring_enabled: true 
+
+kibana_security_audit_enabled: false
+
+kibana_elasticsearch_ssl_verification_mode: none

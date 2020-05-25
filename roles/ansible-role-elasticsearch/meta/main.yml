@@ -1,0 +1,6 @@
+galaxy_info:
+  role_name: ansible-role-elasticsearch
+  author: h4rdl1nk 
+  description: ELK stack elasticsearch configure and install ( docker ) 
+  min_ansible_version: 2.7
+

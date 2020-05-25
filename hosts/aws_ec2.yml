@@ -1,0 +1,8 @@
+plugin: aws_ec2
+
+cache: yes
+cache_timeout: 0
+
+keyed_groups:
+  - prefix: tag
+    key: tags

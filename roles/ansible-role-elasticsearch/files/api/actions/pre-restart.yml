@@ -1,0 +1,17 @@
+---
+
+actions:
+
+  disable_routing:
+    method: PUT
+    path: _cluster/settings
+    body: |
+      {
+        "persistent": {
+          "cluster.routing.allocation.enable": "none"
+        }
+      }
+
+  flush:
+    method: POST
+    path: _flush/synced

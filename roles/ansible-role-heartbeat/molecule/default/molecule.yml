@@ -1,0 +1,42 @@
+---
+dependency:
+  name: galaxy
+driver:
+  name: vagrant
+  provider:
+    name: virtualbox
+lint:
+  name: yamllint
+platforms:
+  - name: instance
+    box: centos/7
+provisioner:
+  name: ansible
+  options:
+    become: true
+  lint:
+    name: ansible-lint
+  inventory:
+    group_vars: 
+      all:
+        docker_daemon_config:
+          storage-driver: overlay2
+          debug: true
+          exec-opts:
+            - native.cgroupdriver=systemd
+          bip: "192.168.200.1/24"
+          selinux-enabled: true
+          userland-proxy: true
+          live-restore: true
+          runtimes:
+            docker-runc:
+              path: /usr/libexec/docker/docker-runc-current
+          default-runtime: docker-runc
+        docker_packages_so:
+          - lvm2
+          - docker
+          - docker-python
+verifier:
+  name: testinfra
+  lint:
+    name: flake8

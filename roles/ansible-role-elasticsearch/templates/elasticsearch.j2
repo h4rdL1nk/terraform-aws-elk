@@ -1,0 +1,72 @@
+cluster.name: {{ elasticsearch_cluster_name }}
+cluster.initial_master_nodes: [ {% for node in groups[ elasticsearch_group ] %}"{{ hostvars[ node ]['ansible_hostname'] }}"{% if loop.index != groups[ elasticsearch_group ]|length %},{% endif %}{% endfor %} ]
+network.publish_host: {{ elasticsearch_network_address }}
+network.bind_host: 0.0.0.0
+http.max_initial_line_length: 16kb
+discovery.seed_hosts: [{% for addr in elasticsearch_cluster_network_addresses %}"{{ addr }}"{% if loop.index != elasticsearch_cluster_network_addresses|length %},{% endif %}{% endfor %}]
+cluster.routing.allocation.disk.watermark.low: 5gb
+cluster.routing.allocation.disk.watermark.high: 2gb
+cluster.routing.allocation.disk.watermark.flood_stage: 1gb
+cluster.info.update.interval: 1m
+thread_pool.search.queue_size: 100000
+bootstrap.memory_lock: true
+script.painless.regex.enabled: true
+{% if elasticsearch_security_enabled == true %}
+xpack.security.enabled: true
+xpack.security.authc.realms.native.native1.order: 0
+xpack.security.authc.realms.ldap.ldap1.order: 1
+xpack.security.authc.realms.ldap.ldap1.url: [ {% for host in elasticsearch_security_auth_ldap_hosts %}"{{ host }}"{% if loop.index != elasticsearch_security_auth_ldap_hosts|length %},{% endif %}{% endfor %} ]
+xpack.security.authc.realms.ldap.ldap1.user_search.base_dn: "{{ elasticsearch_security_auth_ldap_base_dn }}"
+xpack.security.authc.realms.ldap.ldap1.files.role_mapping: "{{ elasticsearch_security_auth_ldap_role_mapping_file }}"
+xpack.security.authc.realms.ldap.ldap1.unmapped_groups_as_roles: "{{ elasticsearch_security_auth_ldap_role_mapping_unmapped_groups_as_roles }}"
+{% endif %}
+{% if elasticsearch_security_enabled == true and elasticsearch_security_transport_enabled == true %}
+xpack.security.transport.ssl.enabled: true
+xpack.security.transport.ssl.verification_mode: certificate 
+xpack.security.transport.ssl.key: /usr/share/elasticsearch/config/certs/{{ elasticsearch_certificate_instance_file_key }}
+xpack.security.transport.ssl.certificate: /usr/share/elasticsearch/config/certs/{{ elasticsearch_certificate_instance_file_crt }} 
+xpack.security.transport.ssl.certificate_authorities: [ "/usr/share/elasticsearch/config/certs/{{ elasticsearch_certificate_ca_file_ingest }}" ]
+{% endif %}
+{% if elasticsearch_security_enabled == true and elasticsearch_security_http_enabled == true %}
+xpack.security.http.ssl.enabled: true
+xpack.security.http.ssl.key:  /usr/share/elasticsearch/config/certs/{{ elasticsearch_certificate_instance_file_key }} 
+xpack.security.http.ssl.certificate: /usr/share/elasticsearch/config/certs/{{ elasticsearch_certificate_instance_file_crt }}
+xpack.security.http.ssl.certificate_authorities: [ "/usr/share/elasticsearch/config/certs/{{ elasticsearch_certificate_ca_file_ingest }}" ]
+{% endif %}
+xpack.notification.email.account.default.profile: standard
+xpack.notification.email.account.default.smtp.auth: false
+xpack.notification.email.account.default.smtp.host: {{ elasticsearch_notification_mail_server }}
+
+# https://www.elastic.co/guide/en/elasticsearch/reference/current/es-monitoring.html
+# https://www.elastic.co/guide/en/elasticsearch/reference/current/collecting-monitoring-data.html
+
+{% if elasticsearch_monitoring_enabled %}
+xpack.monitoring:
+  enabled: {{ elasticsearch_monitoring_enabled }} 
+  elasticsearch:
+    collection:
+      enabled: true
+  collection:
+    enabled: {{ elasticsearch_monitoring_enabled }}
+  exporters:
+    id1:
+      type: http
+      host: [ {% for node in elasticsearch_monitoring_hosts %}"{% if elasticsearch_security_http_enabled %}https{% else %}http{% endif %}://{{ node }}:{{ elasticsearch_network_port }}"{% if loop.index != elasticsearch_monitoring_hosts|length %},{% endif %}{% endfor %} ] 
+      ssl:
+        verification_mode: none
+        certificate_authorities: [ "/usr/share/elasticsearch/config/certs/{{ elasticsearch_certificate_ca_file_ingest }}" ]
+      auth:
+        username: {{ secrets.elasticsearch.monitoring.user }} 
+        password: {{ secrets.elasticsearch.monitoring.pass }} 
+    id2:
+      type: local
+{% endif %}
+
+#SLACK NOTIFICATIONS
+#xpack.notification.slack.account.monitoring.message_defaults.from: ES Watcher PRE
+#path.repo: ["/snapshots"]
+
+# Truststore config
+{% if elasticsearch_security_truststore_enabled == true %}
+xpack.http.ssl.truststore.path: /usr/share/elasticsearch/config/certs/http_ssl_truststore.jks
+{% endif %}

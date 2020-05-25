@@ -1,0 +1,24 @@
+---
+
+filebeat_docker_image: registry.smartdigits.io/infra/filebeat
+filebeat_docker_tag: 7.2.0
+filebeat_docker_security_opts: 
+  - label:type:container_runtime_t
+filebeat_docker_container_memory: 512 
+filebeat_config_dir: /var/dockershared/filebeat/config
+filebeat_data_dir: /var/dockershared/filebeat/data
+filebeat_cluster_name: default
+filebeat_cluster_uuid: dummy
+filebeat_set_cluster_uuid: true
+filebeat_elasticsearch_monitoring_hosts: []
+filebeat_secrets_file: vault/secrets.yml
+filebeat_setup_template: false
+filebeat_setup_ilm: false
+filebeat_output_elasticsearch: true
+filebeat_output_logstash: false
+filebeat_monitoring_enable: false 
+filebeat_force_keystore_write: false
+filebeat_logging_level: info
+filebeat_http_enabled: False
+filebeat_http_port: 9600
+filebeat_http_host: 0.0.0.0

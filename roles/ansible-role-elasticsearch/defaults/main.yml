@@ -1,0 +1,70 @@
+---
+
+elasticsearch_docker_image: registry.smartdigits.io/infra/elasticsearch
+elasticsearch_docker_tag: 7.2.0
+elasticsearch_docker_container_user_uid: 1000
+elasticsearch_docker_container_group_uid: 1000
+elasticsearch_docker_container_memory: 4096
+elasticsearch_docker_container_cpu_period: 100000
+elasticsearch_docker_container_cpu_quota: 0
+elasticsearch_docker_container_cpu_count: 1
+elasticsearch_security_enabled: true
+elasticsearch_security_transport_enabled: true
+elasticsearch_security_http_enabled: true
+elasticsearch_security_auth_ldap_hosts:
+  - "ldap://replicahi.hi.inet:389"
+elasticsearch_security_auth_ldap_base_dn: "o=TID"
+elasticsearch_security_auth_ldap_role_mapping_unmapped_groups_as_roles: 'false'
+elasticsearch_security_auth_ldap_role_mapping_file: /usr/share/elasticsearch/config/role_mapping.yml
+elasticsearch_security_truststore_enabled: false
+elasticsearch_notification_mail_server: mailhost.hi.inet
+elasticsearch_data_dir: /var/dockershared/elasticsearch/data
+elasticsearch_config_dir: /var/dockershared/elasticsearch/config
+elasticsearch_snapshot_dir_host: /var/dockershared/elasticsearch/snapshots
+elasticsearch_snapshot_dir_dest: /snapshots
+elasticsearch_cluster_name: clustermicro
+elasticsearch_cluster_group: elasticsearch
+elasticsearch_cluster_check: False
+elasticsearch_network_port: 9200
+elasticsearch_network_name: DOCKER_BACKEND
+elasticsearch_license_enabled: false 
+elasticsearch_certificate_local_dir: certificates
+elasticsearch_certificate_dir: /var/dockershared/elasticsearch/certs
+elasticsearch_certificate_ca_file_key: ESca.key
+elasticsearch_certificate_ca_file_ingest: ESca.crt
+elasticsearch_certificate_ca_file_monitoring: ESMONca.crt
+elasticsearch_certificate_instance_file_key: instance.key 
+elasticsearch_certificate_instance_file_csr: instance.csr
+elasticsearch_certificate_instance_file_crt: instance.crt
+elasticsearch_users_create: false 
+elasticsearch_users_internal_pass_change: false
+elasticsearch_force_keystore_create: false
+elasticsearch_roles_create: false
+elasticsearch_secrets_file: vault/secrets.yml
+elasticsearch_pre_restart_actions: false
+elasticsearch_monitoring_enabled: false
+elasticsearch_monitoring_hosts: []
+elasticsearch_metricbeat_monitoring_enabled: false
+
+elasticsearch_lvm_storage_enable: False
+elasticsearch_lvm_storage_pv_devices: []
+elasticsearch_lvm_storage_pv_pesize: 32
+elasticsearch_lvm_storage_vg_name: elasticsearch
+elasticsearch_lvm_storage_lv_name: data
+elasticsearch_lvm_storage_lv_size: 100%FREE
+
+pre_restart_actions:
+  disable_routing:
+    method: PUT
+    path: _cluster/settings
+    body: |
+      {
+        "persistent": {
+          "cluster.routing.allocation.enable": "none"
+        }
+      }
+
+  flush:
+    method: POST
+    path: _flush/synced
+    body: ""

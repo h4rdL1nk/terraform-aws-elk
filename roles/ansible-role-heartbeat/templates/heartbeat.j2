@@ -1,0 +1,84 @@
+
+{% if heartbeat_set_cluster_uuid %}
+monitoring.cluster_uuid: "{{ heartbeat_cluster_uuid }}"
+{% endif %}
+
+heartbeat.config.monitors:
+  path: ${path.config}/monitors.d/*.yml
+  reload.enabled: false
+  reload.period: 5s
+
+heartbeat.autodiscover:
+  providers:
+    - type: docker
+      templates:
+        - condition:
+            equals:
+              docker.container.labels.SERVICE_TYPE: logstash
+          config:
+            - type: tcp
+              hosts: ["${data.host}:${data.port}"]
+              schedule: "@every 1s"
+              timeout: 1s
+
+processors:
+  - add_cloud_metadata: ~
+
+setup:
+  kibana:
+    host: "{{ kibana_cluster_network_addresses[0] }}:{{ kibana_network_port }}"
+    protocol: "http"
+    username: "${KIBANA_SETUP_USER}"
+    password: "${KIBANA_SETUP_PASS}"
+  ilm:
+    enabled: {{ heartbeat_setup_ilm }}
+    pattern: "heartbeat-*"
+  dashboards:
+    enabled: {{ heartbeat_setup_dashboards }}
+    index: "heartbeat-*"
+  template:
+    enabled: {{ heartbeat_setup_template }}
+    name: "heartbeat-%{[agent.version]}"
+    pattern: "heartbeat-%{[agent.version]}-*"
+
+output.elasticsearch:
+  enabled: {{ heartbeat_output_elasticsearch and not heartbeat_output_logstash }}
+  protocol: "{% if elasticsearch_security_http_enabled %}https{% else %}http{% endif %}"
+  hosts: [ {% for node in elasticsearch_cluster_network_addresses %}"{% if elasticsearch_security_http_enabled %}https{% else %}http{% endif %}://{{ node }}:{{ elasticsearch_network_port }}"{% if loop.index != elasticsearch_cluster_network_addresses|length %},{% endif %}{% endfor %} ]
+  index: "heartbeat-%{[agent.version]}-%{+yyyy.MM.dd}"
+  username: "${ES_USR}"
+  password: "${ES_PWD}"
+  ssl:
+    verification_mode: none
+    certificate_authorities: ["/usr/share/heartbeat/{{ elasticsearch_certificate_ca_file_ingest }}"]
+
+output.logstash:
+  enabled: {{ heartbeat_output_logstash }}
+  loadbalance: true
+  hosts: [ {% for node in logstash_cluster_network_addresses %}"{{ node }}:{{ logstash_network_port }}"{% if loop.index != logstash_cluster_network_addresses|length %},{% endif %}{% endfor %} ]
+  index: "heartbeat-%{[agent.version]}-%{+yyyy.MM.dd}"
+  ssl:
+    verification_mode: none
+    certificate_authorities: ["/usr/share/heartbeat/{{ elasticsearch_certificate_ca_file_ingest }}"]
+
+{% if heartbeat_monitoring_enable %}
+monitoring:
+  enabled: {{ heartbeat_monitoring_enable }} 
+  elasticsearch:
+    hosts: [ {% for node in heartbeat_elasticsearch_monitoring_hosts %}"{% if elasticsearch_security_http_enabled %}https{% else %}http{% endif %}://{{ node }}:{{ elasticsearch_network_port }}"{% if loop.index != heartbeat_elasticsearch_monitoring_hosts|length %},{% endif %}{% endfor %} ]
+    username: "${ES_MONITORING_USER}"
+    password: "${ES_MONITORING_PASS}"
+    ssl:
+      verification_mode: none
+      certificate_authorities: "/usr/share/heartbeat/{{ elasticsearch_certificate_ca_file_ingest }}"
+{% endif %}
+
+logging:
+  level: {{ heartbeat_logging_level }} 
+  selectors: '*'
+
+{% if heartbeat_http_enabled %}
+http:
+  host: 0.0.0.0
+  port: {{ heartbeat_http_port }} 
+{% endif %}

@@ -1,0 +1,142 @@
+---
+
+- name: Create metricbeat directories
+  file:
+    state: directory
+    path: "{{ item }}"
+    recurse: True
+  with_items:
+    - "{{ metricbeat_config_dir }}"
+    - "{{ metricbeat_data_dir }}"
+  tags:
+    - configuration
+    - files
+
+- name: Copy SSL certificates
+  copy:
+    src: "{{ elasticsearch_certificate_local_dir|default('files/elasticsearch/certificates')}}/{{ item }}"
+    dest: "{{ metricbeat_config_dir }}/{{ item }}"
+  with_items:
+    - "{{ elasticsearch_certificate_ca_file_ingest }}"
+    - "{{ elasticsearch_certificate_ca_file_monitoring }}"
+  tags:
+    - configuration
+    - files
+    - certificates
+
+- name: Load metricbeat secrets
+  include_vars:
+    file: "{{ lookup('env', 'PWD') }}/{{ metricbeat_secrets_file|default('vault/secrets.yml')}}"
+  tags:
+    - configuration
+
+- name: Get elasticsearch cluster UUID
+  uri: 
+    method: GET
+    url_username: elastic
+    url_password: "{{ secrets.elasticsearch.users.elastic }}"
+    url: "{% if elasticsearch_security_http_enabled %}https{% else %}http{% endif %}://{{ elasticsearch_cluster_network_addresses[0] }}:{{ elasticsearch_network_port }}"
+    remote_src: True
+    return_content: True
+    validate_certs: False
+  when: metricbeat_set_cluster_uuid
+  register: cluster_uuid
+  
+- name: Set cluster UUID variable
+  set_fact:
+    metricbeat_cluster_uuid: "{{ cluster_uuid.json.cluster_uuid }}"
+  when: metricbeat_set_cluster_uuid
+
+- name: Copy metricbeat configuration
+  template:
+    src: metricbeat.j2
+    dest: "{{ metricbeat_config_dir }}/metricbeat.yml"
+  register: metricbeat_config
+  tags:
+    - configuration
+    - files
+
+- name: Create metricbeat keystore
+  command: "docker run --rm -i -v {{ metricbeat_data_dir }}:/usr/share/metricbeat/data:rw,Z --user root {{ metricbeat_docker_image }}:{{ metricbeat_docker_tag }} keystore create"
+  args:
+    creates: "{{ metricbeat_data_dir }}/metricbeat.keystore"
+  register: keystore_create
+  tags:
+    - configuration
+    - files
+    - keystore
+
+- name: Add metricbeat keystore keys
+  command: "docker run --rm -i -v {{ metricbeat_data_dir }}:/usr/share/metricbeat/data:rw,Z --user root {{ metricbeat_docker_image }}:{{ metricbeat_docker_tag }} keystore add {{ item.key }} --stdin --force"
+  args:
+    stdin: "{{ item.value }}"
+  with_dict: "{{ secrets.metricbeat }}"
+  when: keystore_create.changed or metricbeat_force_keystore_write
+  register: keystore_write
+  tags:
+    - configuration
+    - files
+    - keystore
+
+- name: Create metricbeat template 
+  command: "docker run --rm -i -v {{ metricbeat_data_dir }}:/usr/share/metricbeat/data:rw,Z -v {{ metricbeat_config_dir }}/metricbeat.yml:/usr/share/metricbeat/metricbeat.yml:ro,Z -v {{ metricbeat_config_dir }}/{{ elasticsearch_certificate_ca_file_ingest }}:/usr/share/metricbeat/{{ elasticsearch_certificate_ca_file_ingest }}:ro,Z --user root {{ metricbeat_docker_image }}:{{ metricbeat_docker_tag }} setup -E output.logstash.enabled=false -E output.elasticsearch.enabled=true -E output.elasticsearch.protocol=https -E output.elasticsearch.username=elastic -E output.elasticsearch.password={{ secrets.elasticsearch.users.elastic }} --template"
+  run_once: True 
+  ignore_errors: True 
+  when: metricbeat_setup_template and not metricbeat_output_elasticsearch
+  tags:
+    - configuration
+    - setup
+    - template
+
+- name: Create metricbeat ilm policy 
+  command: "docker run --rm -i -v {{ metricbeat_data_dir }}:/usr/share/metricbeat/data:rw,Z -v {{ metricbeat_config_dir }}/metricbeat.yml:/usr/share/metricbeat/metricbeat.yml:ro,Z -v {{ metricbeat_config_dir }}/{{ elasticsearch_certificate_ca_file_ingest }}:/usr/share/metricbeat/{{ elasticsearch_certificate_ca_file_ingest }}:ro,Z --user root {{ metricbeat_docker_image }}:{{ metricbeat_docker_tag }} setup -E output.logstash.enabled=false -E output.elasticsearch.enabled=true -E output.elasticsearch.protocol=https -E output.elasticsearch.username=elastic -E output.elasticsearch.password={{ secrets.elasticsearch.users.elastic }} --ilm-policy"
+  run_once: True 
+  ignore_errors: True 
+  when: metricbeat_setup_ilm and not metricbeat_output_elasticsearch
+  tags:
+    - configuration
+    - setup
+    - policy
+
+- name: Create metricbeat dashboards
+  command: "docker run --rm -i -v {{ metricbeat_data_dir }}:/usr/share/metricbeat/data:rw,Z -v {{ metricbeat_config_dir }}/metricbeat.yml:/usr/share/metricbeat/metricbeat.yml:ro,Z -v {{ metricbeat_config_dir }}/{{ elasticsearch_certificate_ca_file_ingest }}:/usr/share/metricbeat/{{ elasticsearch_certificate_ca_file_ingest }}:ro,Z --user root {{ metricbeat_docker_image }}:{{ metricbeat_docker_tag }} setup -E setup.kibana.host={{ kibana_cluster_network_addresses[0] }}:{{ kibana_network_port }} -E setup.kibana.protocol=http -E setup.kibana.username=elastic -E setup.kibana.password={{ secrets.elasticsearch.users.elastic }} --dashboards"
+  run_once: true
+  when: metricbeat_setup_dashboards
+  tags:
+    - configuration
+    - setup
+    - dashboards
+
+- name: Deploy metricbeat containers
+  docker_container:
+    state: started
+    restart: "{{ (metricbeat_config is defined and metricbeat_config.changed) or (keystore_create is defined and keystore_create.changed) or (keystore_write is defined and keystore_write.changed) }}"
+    name: "smd_infra_metricbeat"
+    user: root
+    image: "{{ metricbeat_docker_image }}:{{ metricbeat_docker_tag }}"
+    detach: true
+    network_mode: host
+    restart_policy: unless-stopped
+    security_opts: "{{ metricbeat_docker_security_opts }}" 
+    capabilities:
+      - sys_ptrace
+      - dac_read_search
+    log_driver: json-file
+    log_options:
+      max-size: '30m'
+      max-file: '3'
+    labels:
+      SERVICE_TYPE: metricbeat 
+      SERVICE_OWNER: infra
+      SERVICE_LABEL: "{{ metricbeat_cluster_name }}" 
+    volumes:
+      - "{{ metricbeat_config_dir }}/metricbeat.yml:/usr/share/metricbeat/metricbeat.yml:ro,Z"
+      - "{{ metricbeat_config_dir }}/{{ elasticsearch_certificate_ca_file_ingest }}:/usr/share/metricbeat/{{ elasticsearch_certificate_ca_file_ingest }}:ro,Z"
+      - "{{ metricbeat_data_dir }}:/usr/share/metricbeat/data:rw,Z"
+      - "/var/run/docker.sock:/var/run/docker.sock:ro"
+      - "/sys/fs/cgroup:/hostfs/sys/fs/cgroup:ro"
+      - "/proc:/hostfs/proc:ro"
+      - "/:/hostfs:ro"
+    command: "metricbeat -e -system.hostfs=/hostfs -E name={{ ansible_hostname }}"
+  tags:
+    - deploy

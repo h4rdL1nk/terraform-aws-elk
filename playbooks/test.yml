@@ -1,0 +1,11 @@
+--- 
+
+  - name: ELK kibana setup
+    gather_facts: true
+    hosts: kibana
+    become: true
+
+    tasks:
+
+      - debug:
+          msg: "{% for host in groups[elasticsearch_group] %}{{ hostvars[host]['private_ip_address'] }}, {% endfor %}"

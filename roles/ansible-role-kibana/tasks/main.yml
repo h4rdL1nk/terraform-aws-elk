@@ -1,0 +1,95 @@
+---
+
+- name: Create kibana directories
+  file:
+    state: directory
+    path: "{{ item }}"
+    recurse: True
+    owner: "{{ kibana_docker_container_user_uid }}"
+    group: "{{ kibana_docker_container_group_uid }}"
+  with_items:
+    - "{{ kibana_config_dir }}"
+    - "{{ kibana_data_dir }}"
+    - "{{ kibana_certificate_dir }}"
+  tags:
+    - configuration
+    - files
+
+- name: Copy SSL certificates
+  copy:
+    src: "{{ elasticsearch_certificate_local_dir|default('files/elasticsearch/certificates')}}/{{ item }}"
+    dest: "{{ kibana_certificate_dir }}/{{ item }}"
+    mode: 0440
+    owner: "{{ kibana_docker_container_user_uid }}"
+    group: "{{ kibana_docker_container_group_uid }}"
+  with_items:
+    - "{{ elasticsearch_certificate_ca_file_ingest }}"
+    - "{{ elasticsearch_certificate_ca_file_monitoring }}"
+  tags:
+    - configuration
+    - files
+    - certificates
+
+- name: Copy kibana configuration
+  template:
+    src: kibana.j2
+    dest: "{{ kibana_config_dir }}/kibana.yml"
+    owner: "{{ kibana_docker_container_user_uid }}"
+    group: "{{ kibana_docker_container_group_uid }}"
+  register: kibana_config
+  tags:
+    - configuration
+    - files
+
+- name: Create kibana keystore
+  command: "docker run --rm -i -v {{ kibana_data_dir }}:/usr/share/kibana/data:rw,Z {{ kibana_docker_image }}:{{ kibana_docker_tag }} kibana-keystore create"
+  args:
+    creates: "{{ kibana_data_dir }}/kibana.keystore"
+  register: keystore_create
+  tags:
+    - configuration
+    - files
+    - keystore
+
+- name: Load kibana secrets
+  include_vars:
+    file: "{{ lookup('env', 'PWD') }}/{{ kibana_secrets_file|default('vault/secrets.yml')}}"
+  tags:
+    - configuration
+
+- name: Add kibana keystore keys
+  command: "docker run --rm -i -v {{ kibana_data_dir }}:/usr/share/kibana/data:rw,Z {{ kibana_docker_image }}:{{ kibana_docker_tag }} kibana-keystore add {{ item.key }} --stdin"
+  args:
+    stdin: "{{ item.value }}"
+  with_dict: "{{ secrets.kibana }}"
+  when: keystore_create.changed or kibana_force_keystore_write
+  register: keystore_add
+  tags:
+    - configuration
+    - files
+    - keystore
+
+- name: Deploy kibana containers
+  docker_container:
+    state: started
+    restart: "{{ (kibana_config is defined and kibana_config.changed) or (keystore_create is defined and keystore_create.changed) or (keystore_add is defined and keystore_add.changed) }}"
+    name: "smd_infra_kibana"
+    image: "{{ kibana_docker_image }}:{{ kibana_docker_tag }}"
+    detach: true
+    restart_policy: unless-stopped
+    log_driver: json-file
+    log_options:
+      max-size: '30m'
+      max-file: '3'
+    labels:
+      SERVICE_TYPE: kibana 
+      SERVICE_OWNER: infra
+      SERVICE_LABEL: "{{ kibana_cluster_name }}"
+    published_ports:
+      - "{{ kibana_network_address }}:{{ kibana_network_port }}:5601"
+    volumes:
+      - "{{ kibana_config_dir }}/kibana.yml:/usr/share/kibana/config/kibana.yml:ro,Z"
+      - "{{ kibana_data_dir }}/:/usr/share/kibana/data/:rw,Z"
+      - "{{ kibana_certificate_dir }}:/certs/:ro,Z"
+  tags:
+    - deploy

@@ -1,0 +1,24 @@
+---
+
+heartbeat_docker_image: registry.smartdigits.io/infra/heartbeat
+heartbeat_docker_tag: 7.2.0
+heartbeat_docker_security_opts:
+  - label:type:container_runtime_t
+heartbeat_config_dir: /var/dockershared/heartbeat/config
+heartbeat_data_dir: /var/dockershared/heartbeat/data
+heartbeat_cluster_name: default
+heartbeat_cluster_uuid: dummy
+heartbeat_set_cluster_uuid: true
+heartbeat_secrets_file: vault/secrets.yml
+heartbeat_setup_ilm: false
+heartbeat_setup_dashboards: false
+heartbeat_setup_template: true
+heartbeat_output_elasticsearch: true
+heartbeat_output_logstash: false
+heartbeat_monitoring_enable: false
+heartbeat_force_keystore_write: false
+heartbeat_logging_level: info
+
+heartbeat_http_enabled: False
+heartbeat_http_port: 9600
+heartbeat_http_host: 0.0.0.0

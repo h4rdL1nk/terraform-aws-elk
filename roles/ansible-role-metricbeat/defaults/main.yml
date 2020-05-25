@@ -1,0 +1,37 @@
+---
+
+metricbeat_docker_image: registry.smartdigits.io/infra/metricbeat
+metricbeat_docker_tag: 7.2.0
+metricbeat_docker_security_opts:
+  - label:type:container_runtime_t
+metricbeat_config_dir: /var/dockershared/metricbeat/config
+metricbeat_data_dir: /var/dockershared/metricbeat/data
+metricbeat_cluster_name: default
+metricbeat_cluster_uuid: dummy
+metricbeat_set_cluster_uuid: true
+metricbeat_secrets_file: vault/secrets.yml
+metricbeat_setup_ilm: false
+metricbeat_setup_dashboards: false
+metricbeat_setup_template: true
+metricbeat_output_elasticsearch: true
+metricbeat_output_logstash: false
+metricbeat_monitoring_enable: false
+metricbeat_force_keystore_write: false
+metricbeat_logging_level: info
+
+metricbeat_module_docker_period: 10s
+metricbeat_module_docker_metricsets: ["container","cpu","diskio","healthcheck","info","image","memory","network"]
+  
+metricbeat_module_system_period: 10s
+metricbeat_module_system_metricsets: ["cpu","load","memory","network","process","process_summary","uptime","socket_summary","core","diskio","filesystem","fsstat","socket"]
+
+metricbeat_http_enabled: False
+metricbeat_http_port: 9600
+metricbeat_http_host: 0.0.0.0
+
+metricbeat_monitoring_elasticsearch_http_port: 9200
+metricbeat_monitoring_kibana_http_port: 5601
+metricbeat_monitoring_logstash_http_port: 9600
+metricbeat_monitoring_filebeat_http_port: 9600
+metricbeat_monitoring_metricbeat_http_port: 9600
+metricbeat_monitoring_heartbeat_http_port: 9600

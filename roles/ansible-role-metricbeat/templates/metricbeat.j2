@@ -1,0 +1,219 @@
+
+{% if metricbeat_set_cluster_uuid %}
+monitoring.cluster_uuid: "{{ metricbeat_cluster_uuid }}"
+{% endif %}
+
+metricbeat.config:
+  modules:
+    path: ${path.config}/modules.d/*.yml
+    reload.enabled: false
+
+metricbeat.autodiscover:
+  providers:
+    - type: docker
+      hints.enabled: true
+      templates:
+        - condition:
+            equals:
+              docker.container.labels.SERVICE_TYPE: elasticsearch 
+          config:
+            - module: elasticsearch 
+              period: 10s
+              metricsets:
+               - ccr
+               - enrich
+               - cluster_stats
+               - index
+               - index_recovery
+               - index_summary
+               - ml_job
+               - node_stats
+               - shard
+              hosts: "{% if elasticsearch_security_http_enabled %}https{% else %}http{% endif %}://${data.host}:{{ metricbeat_monitoring_elasticsearch_http_port }}"
+              ssl.certificate_authorities: ["/usr/share/metricbeat/{{ elasticsearch_certificate_ca_file_ingest }}"]
+              ssl.verification_mode: none
+              # Secrets from keystore noy allowed in version 7.6.x
+              #username: "${ES_USR}"
+              #password: "${ES_PWD}"
+              username: "{{ secrets.elasticsearch.monitoring.user }}"
+              password: "{{ secrets.elasticsearch.monitoring.pass }}"
+              xpack.enabled: true
+        - condition:
+            equals:
+              docker.container.labels.SERVICE_TYPE: kibana 
+          config:
+            - module: kibana
+              metricsets:
+                - stats
+              period: 10s
+              hosts: ["${data.host}:{{ metricbeat_monitoring_kibana_http_port }}"]
+              #basepath: ""
+              # Secrets from keystore noy allowed in version 7.6.x
+              #username: "${KIBANA_SETUP_USER}"
+              #password: "${KIBANA_SETUP_USER}"
+              username: "{{ secrets.elasticsearch.monitoring.user }}"
+              password: "{{ secrets.elasticsearch.monitoring.pass }}" 
+              xpack.enabled: true
+        - condition:
+            equals:
+              docker.container.labels.SERVICE_TYPE: filebeat
+          config:
+            - module: beat
+              period: 10s
+              metricsets:
+               - stats
+               - state
+              hosts: "${data.host}:{{ metricbeat_monitoring_filebeat_http_port }}"
+              xpack.enabled: true
+        - condition:
+            equals:
+              docker.container.labels.SERVICE_TYPE: metricbeat
+          config:
+            - module: beat
+              period: 10s
+              metricsets:
+               - stats
+               - state
+              hosts: "${data.host}:{{ metricbeat_monitoring_metricbeat_http_port }}"
+              xpack.enabled: true
+        - condition:
+            equals:
+              docker.container.labels.SERVICE_TYPE: heartbeat
+          config:
+            - module: beat
+              period: 10s
+              metricsets:
+               - stats
+               - state
+              hosts: "${data.host}:{{ metricbeat_monitoring_heartbeat_http_port }}"
+              xpack.enabled: true
+        - condition:
+            equals:
+              docker.container.labels.SERVICE_TYPE: logstash
+          config:
+            - module: logstash
+              period: 10s
+              metricsets: ["node","node_stats"]
+              hosts: "${data.host}:{{ metricbeat_monitoring_logstash_http_port }}"
+              xpack.enabled: true
+            - module: http
+              period: 10s
+              enabled: true
+              metricsets: ["json"]
+              path: "/_node/stats/pipelines"
+              namespace: "logstash_json_pipelines"
+              dedot.enabled: true
+              hosts: "${data.host}:{{ metricbeat_monitoring_logstash_http_port }}"
+        - condition:
+            equals:
+              docker.container.labels.SERVICE_LABEL: ds1_gold
+          config:
+            - module: mongodb
+              period: 5s
+              metricsets: ["status","replstatus"]
+              hosts: "${data.host}:30017"
+        - condition:
+            equals:
+              docker.container.labels.SERVICE_LABEL: ds1_silver
+          config:
+            - module: mongodb
+              period: 5s
+              metricsets: ["status","replstatus"]
+              hosts: "${data.host}:29017"
+        - condition:
+            equals:
+              docker.container.labels.SERVICE_TYPE: etcd 
+          config:
+            - module: etcd 
+              period: 5s
+              metricsets: ["leader", "self", "metrics", "store"] 
+              hosts: "${data.host}:2379"
+
+# Modules configuration
+metricbeat.modules:
+  - module: docker
+    enabled: true
+    period: {{ metricbeat_module_docker_period }} 
+    hosts: ["unix:///var/run/docker.sock"]
+    metricsets:
+    {% for ms in metricbeat_module_docker_metricsets %}
+  - {{ ms }}
+    {% endfor %}
+
+  - module: system
+    enabled: true
+    period: {{ metricbeat_module_system_period }}
+    processes: ['.*']
+    metricsets:
+    {% for ms in metricbeat_module_system_metricsets %}
+  - {{ ms }}
+    {% endfor %}
+
+#- module: elasticsearch
+#- module: etcd
+#- module: kibana
+#- module: logstash
+#- module: mongodb
+#- module: nginx
+
+processors:
+  - add_cloud_metadata: ~
+
+setup:
+  kibana:
+    host: "{{ kibana_cluster_network_addresses[0] }}:{{ kibana_network_port }}"
+    protocol: "http"
+    username: "${KIBANA_SETUP_USER}"
+    password: "${KIBANA_SETUP_PASS}"
+  ilm:
+    enabled: {{ metricbeat_setup_ilm }}
+    pattern: "metricbeat-*"
+  dashboards:
+    enabled: {{ metricbeat_setup_dashboards }}
+    index: "metricbeat-*"
+  template:
+    enabled: {{ metricbeat_setup_template }}
+    name: "metricbeat-%{[agent.version]}"
+    pattern: "metricbeat-%{[agent.version]}-*"
+
+output.elasticsearch:
+  enabled: {{ metricbeat_output_elasticsearch and not metricbeat_output_logstash }}
+  protocol: "{% if elasticsearch_security_http_enabled %}https{% else %}http{% endif %}"
+  hosts: [ {% for node in elasticsearch_cluster_network_addresses %}"{% if elasticsearch_security_http_enabled %}https{% else %}http{% endif %}://{{ node }}:{{ elasticsearch_network_port }}"{% if loop.index != elasticsearch_cluster_network_addresses|length %},{% endif %}{% endfor %} ]
+  index: "metricbeat-%{[agent.version]}-%{+yyyy.MM.dd}"
+  username: "${ES_USR}"
+  password: "${ES_PWD}"
+  ssl:
+    verification_mode: none
+    certificate_authorities: ["/usr/share/metricbeat/{{ elasticsearch_certificate_ca_file_ingest }}"]
+
+output.logstash:
+  enabled: {{ metricbeat_output_logstash }}
+  loadbalance: true
+  hosts: [ {% for node in logstash_cluster_network_addresses %}"{{ node }}:{{ logstash_network_port }}"{% if loop.index != logstash_cluster_network_addresses|length %},{% endif %}{% endfor %} ]
+  index: "metricbeat-%{[agent.version]}-%{+yyyy.MM.dd}"
+  ssl:
+    verification_mode: none
+    certificate_authorities: ["/usr/share/metricbeat/{{ elasticsearch_certificate_ca_file_ingest }}"]
+
+{% if metricbeat_monitoring_enable %}
+monitoring:
+  enabled: {{ metricbeat_monitoring_enable }} 
+  elasticsearch:
+    hosts: [ {% for node in metricbeat_elasticsearch_monitoring_hosts %}"{% if elasticsearch_security_http_enabled %}https{% else %}http{% endif %}://{{ node }}:{{ elasticsearch_network_port }}"{% if loop.index != metricbeat_elasticsearch_monitoring_hosts|length %},{% endif %}{% endfor %} ]
+    username: "${ES_MONITORING_USER}"
+    password: "${ES_MONITORING_PASS}"
+    ssl:
+      verification_mode: none
+      certificate_authorities: "/usr/share/metricbeat/{{ elasticsearch_certificate_ca_file_ingest }}"
+{% endif %}
+
+logging:
+  level: {{ metricbeat_logging_level }} 
+  selectors: '*'
+
+{% if metricbeat_http_enabled %}
+http:
+  host: 0.0.0.0
+  port: {{ metricbeat_http_port }} 
+{% endif %}

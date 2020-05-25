@@ -1,0 +1,36 @@
+---
+
+- name: Create LVM volume group
+  lvg:
+    vg: "{{ elasticsearch_lvm_storage_vg_name }}"
+    pvs: "{{ elasticsearch_lvm_storage_pv_devices }}"
+    pesize: "{{ elasticsearch_lvm_storage_pv_pesize | default('32') }}"
+  register: lvm_vg
+
+- name: Create LVM logical volume
+  lvol:
+    vg: "{{ elasticsearch_lvm_storage_vg_name }}"
+    lv: "{{ elasticsearch_lvm_storage_lv_name }}"
+    size: "{{ elasticsearch_lvm_storage_lv_size }}"
+
+- name: Create LVM logical volume filesystem
+  filesystem:
+    fstype: xfs
+    dev: "/dev/mapper/{{ elasticsearch_lvm_storage_vg_name }}-{{ elasticsearch_lvm_storage_lv_name }}"
+    resizefs: True
+
+- name: Mount data volume
+  mount:
+    path: "{{ elasticsearch_data_dir }}"
+    src: "/dev/mapper/{{ elasticsearch_lvm_storage_vg_name }}-{{ elasticsearch_lvm_storage_lv_name }}"
+    fstype: xfs
+    state: mounted
+  register: data_mount
+
+- name: Change mounted directory owner 
+  file:
+    state: directory
+    path: "{{ elasticsearch_data_dir }}"
+    recurse: False 
+    owner: "{{ elasticsearch_docker_container_user_uid }}"
+    group: "{{ elasticsearch_docker_container_group_uid }}"

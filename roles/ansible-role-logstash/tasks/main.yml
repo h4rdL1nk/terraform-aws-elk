@@ -1,0 +1,205 @@
+---
+
+- name: Create logstash directories
+  file:
+    state: directory
+    path: "{{ item }}"
+    recurse: True
+    owner: "{{ logstash_docker_container_user_uid }}"
+    group: "{{ logstash_docker_container_group_uid }}"
+  with_items:
+    - "{{ logstash_config_dir }}"
+    - "{{ logstash_data_dir }}"
+    - "{{ logstash_config_pipelines_dir }}"
+  tags:
+    - configuration
+    - files
+
+- name: Copy SSL certificates
+  copy:
+    src: "{{ elasticsearch_certificate_local_dir|default('files/elasticsearch/certificates')}}/{{ item }}"
+    dest: "{{ logstash_config_dir }}/{{ item }}"
+    mode: 0440
+    owner: "{{ logstash_docker_container_user_uid }}"
+    group: "{{ logstash_docker_container_group_uid }}"
+  with_items:
+    - "{{ elasticsearch_certificate_ca_file_ingest }}"
+    - "{{ elasticsearch_certificate_ca_file_monitoring }}"
+  register: copy_autch_certs 
+  tags:
+    - configuration
+    - files
+    - certificates
+
+- name: Copy logstash auth certificates
+  copy:
+    src: "{{ logstash_certificate_local_dir|default('files/logstash/certificates')}}/{{ item }}"
+    dest: "{{ logstash_config_dir }}/{{ item }}"
+    mode: 0440
+    owner: "{{ logstash_docker_container_user_uid }}"
+    group: "{{ logstash_docker_container_group_uid }}"
+  with_items:
+    - "{{ logstash_certificate_auth_cert }}"
+    - "{{ logstash_certificate_auth_key }}"
+  when: logstash_certificate_auth_copy
+  tags:
+    - configuration
+    - files
+    - certificates
+
+- name: Load logstash secrets
+  include_vars:
+    file: "{{ lookup('env', 'PWD') }}/{{ logstash_secrets_file|default('vault/secrets.yml')}}"
+  tags:
+    - deploy
+
+- name: Create pipeline files
+  template:
+    src: "{{ item }}"
+    dest: "{{ logstash_kibana_pipeline_templates_dest }}/{{ item | basename | regex_replace('.j2$', '.pipeline') }}"
+  with_fileglob:
+    - "{{ logstash_kibana_pipeline_templates_dir }}/*.j2"
+  become: False
+  delegate_to: localhost
+  register: create_pipeline_files
+  tags:
+    - configuration
+    - files
+    - pipelines
+
+- name: Get pipelines list
+  set_fact:
+    logstash_kibana_pipeline_templates_names: "{{ create_pipeline_files.results | map(attribute='item') | map('regex_replace', '^.*/([a-zA-Z_-]+).j2$', '\\1') | list }}"
+  when: create_pipeline_files.results is defined and create_pipeline_files.results | length > 0
+
+- name: Get elasticsearch cluster UUID
+  uri: 
+    method: GET
+    url_username: elastic
+    url_password: "{{ secrets.elasticsearch.users.elastic }}"
+    url: "{% if elasticsearch_security_http_enabled %}https{% else %}http{% endif %}://{{ elasticsearch_cluster_network_addresses[0] }}:{{ elasticsearch_network_port }}"
+    remote_src: True
+    return_content: True
+    validate_certs: False
+  when: logstash_set_cluster_uuid 
+  register: cluster_uuid
+  
+- name: Set cluster UUID variable
+  set_fact:
+    logstash_cluster_uuid: "{{ cluster_uuid.json.cluster_uuid }}"
+  when: logstash_set_cluster_uuid
+
+- name: Copy logstash configuration
+  template:
+    src: logstash.j2
+    dest: "{{ logstash_config_dir }}/logstash.yml"
+    owner: "{{ logstash_docker_container_user_uid }}"
+    group: "{{ logstash_docker_container_group_uid }}"
+  register: logstash_config
+  tags:
+    - configuration
+    - files
+
+- name: Configure pipeline local files
+  copy:
+    src: "{{ item }}"
+    dest: "{{ logstash_config_pipelines_dir }}"
+  with_fileglob:
+    - "{{ logstash_kibana_pipeline_templates_dest }}/*.pipeline"
+  when: not logstash_kibana_pipeline_enable
+  register: logstash_pipelines_copy
+
+- name: Configure pipeline local config
+  copy:
+    content: |
+      {% for pipeline in logstash_kibana_pipeline_templates_names %}
+      - pipeline.id: {{ pipeline }}
+        path.config: "/usr/share/logstash/config/pipelines/{{ pipeline }}.pipeline"
+        pipeline.workers: 3
+      {% endfor %}
+    dest: "{{ logstash_config_dir }}/pipelines.yml"
+  when: not logstash_kibana_pipeline_enable and create_pipeline_files.results is defined and create_pipeline_files.results | length > 0
+  register: logstash_pipelines_file
+
+- name: Configure pipelines through kibana API
+  uri: 
+    method: PUT
+    force_basic_auth: True
+    url_username: elastic
+    url_password: "{{ secrets.elasticsearch.users.elastic }}"
+    url: "http://{{ kibana_network_address }}:{{ kibana_network_port|default('5601') }}/{{ logstash_kibana_pipeline_endpoint }}/{{ item | basename | regex_replace('.pipeline$', '') }}"
+    remote_src: True
+    return_content: True
+    headers:
+      kbn-version: "{{ logstash_kibana_version }}"
+    body_format: json
+    body: |
+      {
+        "pipeline": "{{ lookup( 'file', item ) | regex_replace('\n','\\n') | regex_replace('\"','\\"') }}"
+      }
+    status_code: [ 200, 204 ]
+  when: logstash_kibana_pipeline_enable
+  run_once: True
+  with_fileglob:
+    - "{{ logstash_kibana_pipeline_templates_dest }}/*.pipeline"
+  register: uri_out
+  until: uri_out.status in [ 200, 204 ]
+  delay: 5
+  retries: 40
+  tags:
+    - configuration
+    - api
+    - pipelines
+
+- debug:
+    msg: "Logstash API disabled for Basic license"
+  when: uri_out.status is defined and uri_out.status in [ 403 ] 
+
+- name: Create logstash keystore
+  command: "docker run --rm -i -e LOGSTASH_KEYSTORE_PASS={{ secrets.logstash.keystore.password }} -v {{ logstash_config_dir }}:/usr/share/logstash/config:rw,Z {{ logstash_docker_image }}:{{ logstash_docker_tag }} logstash-keystore --path.settings /usr/share/logstash/config create"
+  args:
+    creates: "{{ logstash_config_dir }}/logstash.keystore"
+  register: keystore_create
+  tags:
+    - configuration
+    - files
+    - keystore
+
+#- name: Add filebeat keystore keys
+#  command: "docker run --rm -i -e LOGSTASH_KEYSTORE_PASS={{ logstash.keystore.pass }} -v {{ logstash_config_dir }}:/usr/share/logstash/config:rw,Z --user root {{ logstash.docker.image}}:{{ logstash.docker.tag }} logstash-keystore add --stdin {{ item.key }}"
+#  args:
+#    stdin: "{{ item.value }}"
+#  with_dict: "{{ secrets.logstash.keystore.values }}"
+#  when: keystore_create.changed
+
+- name: Deploy logstash containers
+  docker_container:
+    state: started
+    restart: "{{ (logstash_config is defined and logstash_config.changed) or (keystore_create is defined and keystore_create.changed) or ( logstash_pipelines_copy is defined and logstash_pipelines_copy.changed ) or ( logstash_pipelines_file is defined and logstash_pipelines_file.changed ) or ( copy_autch_certs is defined and copy_autch_certs.changed ) }}"
+    name: "smd_infra_logstash"
+    image: "{{ logstash_docker_image }}:{{ logstash_docker_tag }}"
+    detach: true
+    cpu_period: "{{ logstash_docker_container_cpu_period }}"
+    cpu_quota: "{{ ( logstash_docker_container_cpu_period * logstash_docker_container_cpu_count ) | int }}"
+    memory: "{{ logstash_docker_container_memory | default( ( ansible_memtotal_mb / 2 ) | int ) }}m"
+    restart_policy: unless-stopped
+    log_driver: json-file
+    log_options:
+      max-size: '30m'
+      max-file: '3'
+    labels:
+      SERVICE_TYPE: logstash 
+      SERVICE_OWNER: infra
+      SERVICE_LABEL: "{{ logstash_cluster_name|default(elasticsearch_cluster_name) }}" 
+    #published_ports:
+    #  - "{{ logstash_network_address }}:{{ logstash_network_port }}:5044"
+    #  - "{{ logstash_network_address }}:{{ logstash_api_port }}:9600"
+    published_ports: "{{ logstash_network_ports | map('regex_replace','^(.*)$', logstash_network_address + ':\\1:\\1') | list }}"
+    env:
+      LOGSTASH_KEYSTORE_PASS: "{{ secrets.logstash.keystore.password }}"
+    volumes:
+      - "{{ logstash_config_dir }}:/usr/share/logstash/config:rw,Z"
+      - "{{ logstash_data_dir }}:/usr/share/logstash/data:rw,Z"
+    command: "--node.name logstash-{{ ansible_hostname }}"
+  tags:
+    - deploy

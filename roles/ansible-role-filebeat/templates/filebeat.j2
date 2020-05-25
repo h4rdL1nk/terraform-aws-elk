@@ -1,0 +1,86 @@
+
+{% if filebeat_set_cluster_uuid %}
+monitoring.cluster_uuid: "{{ filebeat_cluster_uuid }}"
+{% endif %}
+
+filebeat.inputs:
+- type: docker
+  multiline.pattern: '^[[:space:]]'
+  multiline.negate: false
+  multiline.match: after
+  combine_partial: true
+  containers:
+    path: "/var/lib/docker/containers"
+    stream: "all"
+    ids:
+      - "*"
+  processors:
+  - add_docker_metadata: ~
+
+#output.file:
+#  path: "/tmp/filebeat"
+#  filename: filebeat
+
+setup:
+  template:
+    enabled: {{ filebeat_setup_template }}
+    name: "filebeat-%{[agent.version]}"
+    pattern: "filebeat-*"
+  ilm:
+      enabled: {{ filebeat_setup_ilm }}
+      pattern: "filebeat-*"
+
+output.elasticsearch:
+  enabled: {{ filebeat_output_elasticsearch and not filebeat_output_logstash }}
+  protocol: "{% if elasticsearch_security_http_enabled %}https{% else %}http{% endif %}"
+  hosts: [ {% for node in elasticsearch_cluster_network_addresses %}"{% if elasticsearch_security_http_enabled %}https{% else %}http{% endif %}://{{ node }}:{{ elasticsearch_network_port }}"{% if loop.index != elasticsearch_cluster_network_addresses|length %},{% endif %}{% endfor %} ]
+  index: "filebeat-%{[agent.version]}-%{+yyyy.MM.dd}"
+  username: "${ES_USR}"
+  password: "${ES_PWD}"
+  ssl:
+    verification_mode: none
+    certificate_authorities: ["/usr/share/filebeat/{{ elasticsearch_certificate_ca_file_ingest }}"]
+
+output.logstash:
+  enabled: {{ filebeat_output_logstash }}
+  loadbalance: true
+  hosts: [ {% for node in logstash_cluster_network_addresses %}"{{ node }}:{{ logstash_network_port }}"{% if loop.index != logstash_cluster_network_addresses|length %},{% endif %}{% endfor %} ]
+  index: "filebeat-%{[agent.version]}-%{+yyyy.MM.dd}"
+  ssl:
+    verification_mode: none
+    certificate_authorities: ["/usr/share/filebeat/{{ elasticsearch_certificate_ca_file_ingest }}"]
+
+queue:
+  spool:
+    file:
+      path: "/usr/share/filebeat/data/spool.dat"
+      size: 1024MiB
+      page_size: 16KiB
+    write:
+      buffer_size: 10MiB
+      flush:
+        timeout: 5s
+        events: 1024
+
+## PR to avoid creating "Standalone cluster" in kibana monitoring when no "output.elasticsearch" is enabled: https://github.com/elastic/beats/pull/13182
+{% if filebeat_monitoring_enable %}
+monitoring:
+  enabled: {{ filebeat_monitoring_enable }} 
+  elasticsearch:
+    hosts: [ {% for node in filebeat_elasticsearch_monitoring_hosts %}"{% if elasticsearch_security_http_enabled %}https{% else %}http{% endif %}://{{ node }}:{{ elasticsearch_network_port }}"{% if loop.index != filebeat_elasticsearch_monitoring_hosts|length %},{% endif %}{% endfor %} ]
+    username: "${ES_MONITORING_USER}"
+    password: "${ES_MONITORING_PASS}"
+    ssl:
+      verification_mode: none 
+      certificate_authorities: "/usr/share/filebeat/{{ elasticsearch_certificate_ca_file_ingest }}"
+{% endif %}
+
+logging:
+  level: {{ filebeat_logging_level }} 
+  selectors: '*'
+
+{% if filebeat_http_enabled %}
+http:
+  host: {{ filebeat_http_host }} 
+  port: {{ filebeat_http_port }} 
+{% endif %}

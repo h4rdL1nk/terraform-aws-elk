@@ -1,0 +1,39 @@
+---
+
+logstash_docker_image: registry.smartdigits.io/infra/logstash
+logstash_docker_tag: 7.3.0
+logstash_docker_container_user_uid: 1000
+logstash_docker_container_group_uid: 1000
+#logstash_docker_container_memory: 1024
+logstash_docker_container_cpu_period: 100000
+logstash_docker_container_cpu_quota: 0
+logstash_docker_container_cpu_count: 1
+logstash_group: logstash
+logstash_set_cluster_uuid: true 
+logstash_cluster_uuid: dummy
+logstash_network_port: 5044
+logstash_api_port: 9600
+logstash_network_ports: [ 5044, 5045, 5046, 9600 ]
+logstash_network_name: DOCKER_BACKEND
+logstash_keystore_pass: test
+logstash_certificate_local_dir: files/logstash/certificates
+logstash_certificate_auth_copy: False
+logstash_certificate_auth_cert: server.crt
+logstash_certificate_auth_key: server.key
+logstash_config_dir: /var/dockershared/logstash/config
+logstash_config_pipelines_dir: /var/dockershared/logstash/config/pipelines
+logstash_data_dir: /var/dockershared/logstash/data
+logstash_cluster_name: default
+logstash_secrets_file: vault/secrets.yml
+
+logstash_deadletter_enable: False
+logstash_deadletter_maxbytes: 1024mb
+
+kibana_logstash_pipeline_enable: False
+
+logstash_kibana_pipeline_enable: False
+logstash_kibana_version: 7.6.1
+logstash_kibana_pipeline_endpoint: api/logstash/pipeline
+logstash_kibana_pipeline_templates_names: []
+logstash_kibana_pipeline_templates_dir: templates/pipelines
+logstash_kibana_pipeline_templates_dest: /tmp

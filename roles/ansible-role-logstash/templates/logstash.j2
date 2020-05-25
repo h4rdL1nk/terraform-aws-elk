@@ -1,0 +1,23 @@
+
+{% if logstash_set_cluster_uuid %}
+# Metricbeat monitoring settings
+#monitoring.cluster_uuid: "{{ logstash_cluster_uuid }}"
+xpack.monitoring.enabled: false
+{% endif %}
+
+xpack.management.enabled: {{ logstash_kibana_pipeline_enable }}
+xpack.management.elasticsearch.hosts: [ {% for node in elasticsearch_cluster_network_addresses %}"{% if elasticsearch_security_http_enabled %}https{% else %}http{% endif %}://{{ node }}:{{ elasticsearch_network_port }}"{% if loop.index != elasticsearch_cluster_network_addresses|length %},{% endif %}{% endfor %} ]
+xpack.management.elasticsearch.username: {{ secrets.logstash.es_management_user }}
+xpack.management.elasticsearch.password: {{ secrets.logstash.es_management_pass }}
+xpack.management.logstash.poll_interval: 5s
+xpack.management.elasticsearch.ssl.verification_mode: none
+xpack.management.elasticsearch.ssl.certificate_authority: "/usr/share/logstash/config/{{ elasticsearch_certificate_ca_file_ingest }}"
+xpack.management.pipeline.id: [ {% for pipeline in logstash_kibana_pipeline_templates_names %}"{{ pipeline }}"{% if loop.index != logstash_kibana_pipeline_templates_names|length %},{% endif %}{% endfor %} ]
+
+dead_letter_queue:
+    enable: {{ logstash_deadletter_enable }} 
+    max_bytes: {{ logstash_deadletter_maxbytes }}
+
+http:
+  host: 0.0.0.0
+  port: {{ logstash_api_port }}
