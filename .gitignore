@@ -1,5 +1,6 @@
 terraform/.terraform/*
-terraform/.tfstate*
+terraform/terraform.tfstate
+terraform/terraform.tfstate.backup
 
 files/elasticsearch/certificates/*.crt
 files/elasticsearch/certificates/*.csr
