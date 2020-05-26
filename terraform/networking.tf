@@ -198,3 +198,60 @@ resource "aws_security_group" "private" {
     exposition  = "private"
   }
 }
+
+resource "aws_lb" "main" {
+  name               = var.defaults.environment
+  load_balancer_type = "application"
+  internal           = false
+
+  security_groups    = [ aws_security_group.public.id ]
+  subnets            = aws_subnet.public.*.id
+
+  tags = {
+    Name = format("%s",var.defaults.environment)
+    environment = "test"
+    exposition  = "public"
+  }
+}
+
+resource "aws_lb_listener" "kibana" {
+  load_balancer_arn = aws_lb.main.arn
+  port              = "5601"
+  protocol          = "HTTP"
+
+  default_action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.kibana.arn
+  }
+}
+
+resource "aws_lb_target_group" "kibana" {
+  name     = format("%s-kibana",var.defaults.environment)
+  port     = 5601
+  protocol = "HTTP"
+  vpc_id   = aws_vpc.main.id
+}
+
+resource "aws_lb_listener_rule" "kibana" {
+  listener_arn = aws_lb_listener.kibana.arn
+  priority     = 100
+
+  action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.kibana.arn
+  }
+
+  condition {
+    path_pattern {
+      values = ["/*"]
+    }
+  }
+}
+
+resource "aws_lb_target_group_attachment" "kibana" {
+  count = length(aws_instance.public)
+
+  target_group_arn = aws_lb_target_group.kibana.arn
+  target_id        = aws_instance.public[count.index].id
+  port             = 5601
+}
