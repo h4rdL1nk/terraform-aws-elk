@@ -147,6 +147,7 @@
     memory: "{{ elasticsearch_docker_container_memory | default( ( ansible_memtotal_mb / 2 ) | int ) }}m"
     ulimits: 
       - memlock:-1:-1
+      - nofile:65535:65535
     env:
       node.name: "{{ ansible_hostname }}"
       ES_JAVA_OPTS: "-Xms{{ ( elasticsearch_docker_container_memory | default( ( ansible_memtotal_mb / 2 ) | int ) / 2) | int }}m -Xmx{{ (elasticsearch_docker_container_memory | default( ( ansible_memtotal_mb / 2 ) | int ) / 2) | int }}m" 
@@ -220,6 +221,7 @@
     remote_src: True
     return_content: True
     validate_certs: False
+    force_basic_auth: True
     body_format: json
     body: "{ 'password' : '{{ item.value }}' }"
   run_once: True
@@ -272,6 +274,7 @@
     remote_src: True
     return_content: True
     validate_certs: False
+    force_basic_auth: True
     body_format: json
     body: |
       {
@@ -298,6 +301,7 @@
     remote_src: True
     return_content: True
     validate_certs: False
+    force_basic_auth: True
     body_format: json
     body: |
       {
@@ -324,6 +328,7 @@
     remote_src: True
     return_content: True
     validate_certs: False
+    force_basic_auth: True
     body_format: json
     body: "{{ lookup('file', lookup('env','PWD') + '/files/elasticsearch/license/license.json') }}"
   run_once: True

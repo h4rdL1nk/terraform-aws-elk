@@ -7,7 +7,7 @@ $ export PATH=${PWD}/bin:${PATH}
 
 ### Clone roles
 ```
-$ GIT_SSL_NO_VERIFY=true ansible-galaxy install --force --ignore-errors -r requirements.yml
+$ ansible-galaxy install --force --ignore-errors -r requirements.yml
 ```
 
 ### OST commands

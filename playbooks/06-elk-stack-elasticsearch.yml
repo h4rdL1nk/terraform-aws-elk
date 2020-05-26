@@ -14,6 +14,7 @@
     - role: ansible-role-elasticsearch
       elasticsearch_cluster_name: clustermicro
       elasticsearch_network_address: "{{ hostvars[ inventory_hostname ]['private_ip_address'] }}"
+      elasticsearch_cluster_hostnames: "{% set hostnames = [] %}{% for host in groups[elasticsearch_group] %}{{ hostnames.append(hostvars[ host ]['ansible_hostname']) }}{% endfor %}{{ hostnames | unique }}"
       elasticsearch_cluster_network_addresses: "{% set addresses = [] %}{% for host in groups[elasticsearch_group] %}{{ addresses.append(hostvars[ host ]['private_ip_address']) }}{% endfor %}{{ addresses | unique }}"
       elasticsearch_docker_image: docker.elastic.co/elasticsearch/elasticsearch
       elasticsearch_docker_tag: "{{ elk_stack_version|default('7.4.0') }}"

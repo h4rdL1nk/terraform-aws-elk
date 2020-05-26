@@ -39,6 +39,7 @@
     remote_src: True
     return_content: True
     validate_certs: False
+    force_basic_auth: True
   when: heartbeat_set_cluster_uuid
   register: cluster_uuid
   

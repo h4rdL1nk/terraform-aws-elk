@@ -1,5 +1,5 @@
 cluster.name: {{ elasticsearch_cluster_name }}
-cluster.initial_master_nodes: [ {% for node in groups[ elasticsearch_group ] %}"{{ hostvars[ node ]['ansible_hostname'] }}"{% if loop.index != groups[ elasticsearch_group ]|length %},{% endif %}{% endfor %} ]
+cluster.initial_master_nodes: [{% for addr in elasticsearch_cluster_hostnames %}"{{ addr }}"{% if loop.index != elasticsearch_cluster_hostnames|length %},{% endif %}{% endfor %}]
 network.publish_host: {{ elasticsearch_network_address }}
 network.bind_host: 0.0.0.0
 http.max_initial_line_length: 16kb

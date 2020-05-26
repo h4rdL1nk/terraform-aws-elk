@@ -110,6 +110,22 @@ resource "aws_security_group" "public" {
     cidr_blocks = ["0.0.0.0/0"]
   }
 
+  ingress {
+    description = "Kibana HTTP external"
+    from_port   = 5601
+    to_port     = 5601
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  ingress {
+    description = "Monitoring ports"
+    from_port   = 9600
+    to_port     = 9610
+    protocol    = "tcp"
+    cidr_blocks = [aws_vpc.main.cidr_block]
+  }
+
   egress {
     description = "Allow all outbound"
     from_port   = 0
@@ -132,6 +148,38 @@ resource "aws_security_group" "private" {
     description = "SSH"
     from_port   = 22
     to_port     = 22
+    protocol    = "tcp"
+    cidr_blocks = [aws_vpc.main.cidr_block]
+  }
+
+  ingress {
+    description = "Logstash pipelines"
+    from_port   = 5044
+    to_port     = 5050
+    protocol    = "tcp"
+    cidr_blocks = [aws_vpc.main.cidr_block]
+  }
+
+  ingress {
+    description = "Monitoring ports"
+    from_port   = 9600
+    to_port     = 9610
+    protocol    = "tcp"
+    cidr_blocks = [aws_vpc.main.cidr_block]
+  }
+
+  ingress {
+    description = "ES HTTP"
+    from_port   = 9200
+    to_port     = 9200
+    protocol    = "tcp"
+    cidr_blocks = [aws_vpc.main.cidr_block]
+  }
+
+  ingress {
+    description = "ES Discover"
+    from_port   = 9300
+    to_port     = 9300
     protocol    = "tcp"
     cidr_blocks = [aws_vpc.main.cidr_block]
   }

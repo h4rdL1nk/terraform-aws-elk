@@ -13,6 +13,7 @@
     remote_src: True
     return_content: True
     validate_certs: False
+    force_basic_auth: True
     body_format: json
     body: "{{ item.value | to_nice_json }}"
   run_once: True
@@ -32,6 +33,7 @@
     remote_src: True
     return_content: True
     validate_certs: False
+    force_basic_auth: True
     body_format: json
     body: "{{ item.value | to_nice_json }}"
   run_once: True

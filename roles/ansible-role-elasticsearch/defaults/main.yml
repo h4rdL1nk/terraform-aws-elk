@@ -8,6 +8,8 @@ elasticsearch_docker_container_memory: 4096
 elasticsearch_docker_container_cpu_period: 100000
 elasticsearch_docker_container_cpu_quota: 0
 elasticsearch_docker_container_cpu_count: 1
+elasticsearch_cluster_network_addresses: []
+elasticsearch_cluster_hostnames: []
 elasticsearch_security_enabled: true
 elasticsearch_security_transport_enabled: true
 elasticsearch_security_http_enabled: true

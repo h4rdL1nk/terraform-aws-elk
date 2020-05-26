@@ -18,5 +18,7 @@ elk:
       children:
         tag_application_elasticsearch:
     logstash:
+      children:
+        tag_application_elasticsearch:
     metricbeat:
     filebeat:
