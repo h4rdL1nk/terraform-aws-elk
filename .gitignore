@@ -14,3 +14,6 @@ files/logstash/certificates/*.key
 files/logstash/pipelines/*.j2
 
 ssh/keys/*.pem
+roles/ansible-role-elasticsearch/meta/.galaxy_install_info
+
+roles/*
