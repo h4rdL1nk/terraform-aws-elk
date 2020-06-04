@@ -37,12 +37,11 @@ $ ansible-galaxy install --force --ignore-errors -r requirements.yml
 ### Execute deployment playbooks
 ```
 $ ansible-playbook playbooks/00-create.yml
-$ ansible-playbook playbooks/01-python-setup.yml
-$ ansible-playbook playbooks/04-elk-gen-certificates.yml
-$ ansible-playbook playbooks/05-elk-stack-kibana.yml --ask-vault-pass
+
+$ ansible-playbook playbooks/01-python-setup.yml playbooks/04-elk-gen-certificates.yml playbooks/05-elk-stack-kibana.yml playbooks/06-elk-stack-elasticsearch.yml playbooks/07-elk-stack-logstash.yml playbooks/08-elk-stack-beats.yml --ask-vault-pass
 ```
 
 ### SSH connection
 ```
-$ ssh -i ./ssh/keys/default.pem -o ProxyCommand="ssh -i ./ssh/keys/default.pem -W %h:%p ec2-user@52.209.183.156" ec2-user@10.5.0.11
+$ ssh -i ./ssh/keys/default.pem -o ProxyCommand="ssh -i ./ssh/keys/default.pem -W %h:%p ec2-user@3.249.146.109" ec2-user@10.5.3.47
 ```
